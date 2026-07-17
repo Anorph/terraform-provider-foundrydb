@@ -118,6 +118,7 @@ func (p *foundrydbProvider) Resources(_ context.Context) []func() resource.Resou
 		NewAppJobResource,
 		NewQueueResource,
 		NewEdgeDomainResource,
+		NewEdgeNodeResource,
 		NewAppEdgeSettingsResource,
 		NewWebhookResource,
 		NewDataPipelineResource,
