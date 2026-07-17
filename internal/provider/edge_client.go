@@ -349,6 +349,125 @@ type EdgeSettings struct {
 	ATOProtection     *EdgeATOProtection `json:"ato_protection,omitempty"`
 }
 
+// EdgeNode is a platform edge point-of-presence (PoP): a set of one or more
+// edge VMs in a single zone. When node_count is 2 or more the PoP runs a primary
+// that holds the serving floating IP plus one or more hot standbys. The edge
+// state machine converges node_count toward target_node_count.
+type EdgeNode struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Zone            string `json:"zone"`
+	Plan            string `json:"plan,omitempty"`
+	Status          string `json:"status"`
+	NodeCount       int    `json:"node_count"`
+	TargetNodeCount int    `json:"target_node_count"`
+	CreatedAt       string `json:"created_at,omitempty"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
+}
+
+type createEdgeNodeRequest struct {
+	Zone      string `json:"zone"`
+	Plan      string `json:"plan,omitempty"`
+	NodeCount int    `json:"node_count"`
+}
+
+type scaleEdgeNodeRequest struct {
+	TargetNodeCount int `json:"target_node_count"`
+}
+
+type listEdgeNodesResponse struct {
+	Nodes []EdgeNode `json:"nodes"`
+}
+
+// CreateEdgeNode provisions a new edge PoP in the given zone. nodeCount sets the
+// initial desired VM count (also the target); plan is optional and, when empty,
+// is left to the controller default.
+func (c *edgeClient) CreateEdgeNode(ctx context.Context, zone, plan string, nodeCount int) (*EdgeNode, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/admin/edge/nodes", createEdgeNodeRequest{
+		Zone:      zone,
+		Plan:      plan,
+		NodeCount: nodeCount,
+	})
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.checkResp(resp)
+	if err != nil {
+		return nil, err
+	}
+	var n EdgeNode
+	if err := json.Unmarshal(data, &n); err != nil {
+		return nil, fmt.Errorf("edge: decode CreateEdgeNode response: %w", err)
+	}
+	return &n, nil
+}
+
+// ListEdgeNodes returns all edge PoPs in the fleet.
+func (c *edgeClient) ListEdgeNodes(ctx context.Context) ([]EdgeNode, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/admin/edge/nodes", nil)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.checkResp(resp)
+	if err != nil {
+		return nil, err
+	}
+	var result listEdgeNodesResponse
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("edge: decode ListEdgeNodes response: %w", err)
+	}
+	return result.Nodes, nil
+}
+
+// GetEdgeNode finds an edge PoP by ID within the fleet list. Returns nil when no
+// PoP with that ID exists (treats it as deleted).
+func (c *edgeClient) GetEdgeNode(ctx context.Context, id string) (*EdgeNode, error) {
+	nodes, err := c.ListEdgeNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range nodes {
+		if nodes[i].ID == id {
+			return &nodes[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// ScaleEdgeNode sets the desired VM count for an edge PoP. The edge state machine
+// converges node_count toward target_node_count asynchronously.
+func (c *edgeClient) ScaleEdgeNode(ctx context.Context, id string, targetNodeCount int) (*EdgeNode, error) {
+	resp, err := c.do(ctx, http.MethodPatch, "/admin/edge/nodes/"+id, scaleEdgeNodeRequest{
+		TargetNodeCount: targetNodeCount,
+	})
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.checkResp(resp)
+	if err != nil {
+		return nil, err
+	}
+	var n EdgeNode
+	if err := json.Unmarshal(data, &n); err != nil {
+		return nil, fmt.Errorf("edge: decode ScaleEdgeNode response: %w", err)
+	}
+	return &n, nil
+}
+
+// DeleteEdgeNode deprovisions an edge PoP. A 404 is treated as success (idempotent).
+func (c *edgeClient) DeleteEdgeNode(ctx context.Context, id string) error {
+	resp, err := c.do(ctx, http.MethodDelete, "/admin/edge/nodes/"+id, nil)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		resp.Body.Close()
+		return nil
+	}
+	_, err = c.checkResp(resp)
+	return err
+}
+
 // EdgeStatus is the edge overview for an app service.
 type EdgeStatus struct {
 	EdgeEnabled   bool          `json:"edge_enabled"`

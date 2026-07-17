@@ -230,6 +230,42 @@ resource "foundrydb_queue" "tasks" {
 
 ---
 
+### `foundrydb_edge_node`
+
+Provisions and scales an edge point-of-presence (PoP) in the FoundryDB edge tier. A PoP is one or more edge VMs in a single zone; a `target_node_count` of 2 or more runs a primary that holds the serving floating IP plus one or more hot standbys. The edge state machine converges the live `node_count` toward `target_node_count` asynchronously. Changing `target_node_count` scales the PoP in place; changing `zone` or `plan` destroys and recreates it. This resource covers the declarative edge fleet surface only; the imperative roll operation and the read-only fleet overview and recovery views are handled through the SDK and CLI.
+
+#### Example
+
+```hcl
+resource "foundrydb_edge_node" "sto" {
+  zone              = "se-sto1"
+  target_node_count = 2
+}
+```
+
+#### Arguments
+
+| Argument | Type | Required | Forces Replace | Description |
+|----------|------|----------|----------------|-------------|
+| `zone` | string | Yes | Yes | Cloud zone the PoP is provisioned in (e.g. `se-sto1`). |
+| `plan` | string | No | Yes | Compute plan for the PoP's edge VMs. When omitted, the platform selects the default edge plan. |
+| `target_node_count` | number | No | No | Desired number of edge VMs in the PoP. `1` is a single-node PoP; `2` or more provisions a primary plus hot standbys. Changing this value scales the PoP in place. Default: `2`. |
+
+#### Computed Attributes
+
+| Attribute | Description |
+|-----------|-------------|
+| `id` | UUID of the edge PoP. |
+| `name` | Platform-assigned name of the PoP. |
+| `status` | Current lifecycle status: e.g. `provisioning`, `running`, `scaling`, `failed`. |
+| `node_count` | Number of edge VMs currently live in the PoP; converges toward `target_node_count`. |
+
+#### In-place Updates
+
+Changing `target_node_count` scales the PoP without destroying it. All other arguments are immutable; changing `zone` or `plan` destroys and recreates the PoP.
+
+---
+
 ### `foundrydb_stack`
 
 Launches and manages a FoundryDB vertical-starter stack. A stack provisions a set of platform primitives (database, file storage, inference, app service) from a first-party catalog template or a customer-authored marketplace template in a single atomic operation. After creation, the provider waits up to 20 minutes for the stack to reach `Running` status.
